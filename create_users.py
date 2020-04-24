@@ -34,12 +34,9 @@ def parse_input_file(input_file, proxmox_session_handler):
 def run_main():
     p = proxmox_session_handler()
 
-    #p.get_permissions()
-    #exit()
-
     parse_input_file(sys.argv[1], p)
-    
     p.get_users()
+
     
 
 
