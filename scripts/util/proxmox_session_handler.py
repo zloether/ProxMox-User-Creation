@@ -84,7 +84,9 @@ class proxmox_session_handler():
 
         self.token = r.json()['data']['CSRFPreventionToken']
         self.ticket = r.json()['data']['ticket']
-        self.cookies = dict(PVEAuthCookie = self.ticket)        
+        self.cookies = dict(PVEAuthCookie = self.ticket)
+        self.headers = {'CSRFPreventionToken': self.token}
+
 
 
 
@@ -97,17 +99,13 @@ class proxmox_session_handler():
 
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
 
-        headers = {
-            'CSRFPreventionToken': self.token
-        }
-
         payload = {
             'userid': username + '@' + self.account_realm,
             'password': password,
             'groups': self.account_group,
         }
 
-        r = self.session.post(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+        r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
 
         self.parse_response(r)
 
@@ -205,7 +203,73 @@ class proxmox_session_handler():
                 exit()
         
         return
+
     
+
+    # -----------------------------------------------------------------------------
+    # Returns all online nodes
+    # -----------------------------------------------------------------------------
+    def get_nodes(self):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes'
+        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+
+        self.parse_response(r)
+        
+        j = r.json()
+
+        nodes = []
+        for element in j['data']: # iterate through all returned nodes
+
+            if element['status'] == 'online': # its our node AND its online
+                nodes.append(element['node'])
+        
+            
+        return nodes
+    
+
+
+    # -----------------------------------------------------------------------------
+    # get all VMs
+    # -----------------------------------------------------------------------------
+    def get_vms(self):
+        nodes = self.get_nodes()
+        
+        vms = {}
+        for node in nodes: # iterate through all the nodes
+
+            url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
+            r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+
+            self.parse_response(r)
+
+            #print(json.dumps(r.json(), indent=2, sort_keys=True))
+            #exit()
+
+            j = r.json()
+
+            vms_on_this_node = []
+            for element in j['data']: # iterate through all returned VMs for this node
+                vms_on_this_node.append((element['vmid'], element['name']))
+                
+            vms[node] = vms_on_this_node
+
+        return vms
+    
+
+
+    # -----------------------------------------------------------------------------
+    # delete VM
+    # -----------------------------------------------------------------------------
+    def delete_vm(self, node, vmid):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu/' + vmid
+        
+        r = self.session.delete(url, headers=self.headers, cookies=self.cookies, verify=self.tls_verify)
+
+        self.parse_response(r)
+
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #exit()
+
 
 
     # -----------------------------------------------------------------------------
@@ -284,10 +348,6 @@ class proxmox_session_handler():
         self.check_nodes() # make sure nodes are online
         self.check_pool() # make sure pool is valid
 
-        headers = {
-            'CSRFPreventionToken': self.token
-        }
-
         # set the number of clones to create
         number_to_clone = self.number
 
@@ -305,7 +365,7 @@ class proxmox_session_handler():
             url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
                 node + '/qemu/' + vmid + '/clone'
 
-            r = self.session.post(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+            r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
             self.parse_response(r)
             
             number_to_clone -= 1 # decrement the number to clone by 1
@@ -318,10 +378,6 @@ class proxmox_session_handler():
     def clone_vm(self, name=""):
         self.check_nodes() # make sure nodes are online
         self.check_pool() # make sure pool is valid
-
-        headers = {
-            'CSRFPreventionToken': self.token
-        }
 
         node = self.get_node() # get node to use
         vmid = self.get_vmid(node, self.name) # make sure VMID is valid
@@ -341,7 +397,7 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
             node + '/qemu/' + vmid + '/clone'
 
-        r = self.session.post(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+        r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
         self.parse_response(r)
 
         return newid
@@ -375,17 +431,13 @@ class proxmox_session_handler():
     def grant_access(self, username, vmid):
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/acl'
 
-        headers = {
-            'CSRFPreventionToken': self.token
-        }
-
         payload = {
             'users': username + '@' + self.account_realm,
             'roles': self.role,
             'path': '/vms/' + str(vmid),
         }
         
-        r = self.session.put(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+        r = self.session.put(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
 
         self.parse_response(r)
 
@@ -398,12 +450,8 @@ class proxmox_session_handler():
     # -----------------------------------------------------------------------------
     def delete_user(self, userid):
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users/' + userid
-
-        headers = {
-            'CSRFPreventionToken': self.token
-        }
-        
-        r = self.session.delete(url, headers=headers, cookies=self.cookies, verify=self.tls_verify)
+    
+        r = self.session.delete(url, headers=self.headers, cookies=self.cookies, verify=self.tls_verify)
 
         self.parse_response(r)
 
