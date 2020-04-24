@@ -124,7 +124,15 @@ class proxmox_session_handler():
 
         self.parse_response(r)
 
-        print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #exit()
+
+        j = r.json()
+        users = []
+        for user in j['data']:
+            users.append(user['userid'])
+        
+        return users
     
 
 
@@ -382,6 +390,25 @@ class proxmox_session_handler():
         self.parse_response(r)
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
+    
+
+
+    # -----------------------------------------------------------------------------
+    # Delete user
+    # -----------------------------------------------------------------------------
+    def delete_user(self, userid):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users/' + userid
+
+        headers = {
+            'CSRFPreventionToken': self.token
+        }
+        
+        r = self.session.delete(url, headers=headers, cookies=self.cookies, verify=self.tls_verify)
+
+        self.parse_response(r)
+
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #exit()
 
 
 
