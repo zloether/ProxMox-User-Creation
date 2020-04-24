@@ -1,15 +1,28 @@
+# server info
 [config]
 server = 10.0.0.XXX
 port = 8006
 tls_verify = True
 
 
+# authentication info
 [authentication]
 username = <userid>
 password = <password>
 realm = pve
 
 
+# accounts to create
 [account]
 group = <group name>
 realm = pve
+role = PVEVMUser
+
+
+# VMs to clone
+[template]
+name = <template friendly name>
+node = <comma seperated list of nodes (e.g., node1,node2)>
+number_to_clone = 1
+pool = <name of resource pool>
+prefix = <prefix to append to cloned VM names>
