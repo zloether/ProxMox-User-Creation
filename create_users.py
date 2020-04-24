@@ -35,7 +35,7 @@ def run_main():
     p = proxmox_session_handler()
 
     parse_input_file(sys.argv[1], p)
-    p.get_users()
+    #p.get_users()
 
     
 

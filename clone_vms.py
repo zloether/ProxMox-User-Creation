@@ -18,6 +18,7 @@ def run_main():
     p = proxmox_session_handler()
 
     p.clone_vms()
+    #p.get_vmid('host2', 'kali-template')
 
     
 

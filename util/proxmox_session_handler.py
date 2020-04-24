@@ -26,6 +26,9 @@ class proxmox_session_handler():
     def __init__(self):
         config = configparser.ConfigParser()
         config.read(config_file_location)
+
+        self.nodes_list = config['template']['node'].split(',')
+        self.nodes_counter = 0
         
         self.server = config['config']['server']
         self.port = config['config']['port']
@@ -35,11 +38,11 @@ class proxmox_session_handler():
         self.login_realm = config['authentication']['realm']
         self.account_group = config['account']['group']
         self.account_realm = config['account']['realm']
-        self.vmid = config['template']['vmid']
-        self.node = config['template']['node']
+        self.role = config['account']['role']
+        self.name = config['template']['name']
         self.number = config.getint('template', 'number_to_clone')
         self.pool = config['template']['pool']
-        self.name = config['template']['name']
+        self.prefix = config['template']['prefix']
 
 
         if not self.tls_verify:
@@ -48,6 +51,20 @@ class proxmox_session_handler():
         self.session = requests.Session()
 
         self.authenticate()
+
+
+
+    # -----------------------------------------------------------------------------
+    # Returns the node to use
+    # -----------------------------------------------------------------------------
+    def get_node(self):
+        node = self.nodes_list[self.nodes_counter] # get node
+        self.nodes_counter += 1 # increment node counter
+
+        if self.nodes_counter > len(self.nodes_list) -1: # if nodes counter is too big
+            self.nodes_counter = 0 # reset to 0
+        
+        return node
 
 
 
@@ -75,6 +92,9 @@ class proxmox_session_handler():
     # Create user account
     # -----------------------------------------------------------------------------
     def create_account(self, username, password):
+        if self.get_user_exists(username):
+            return
+
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
 
         headers = {
@@ -109,6 +129,27 @@ class proxmox_session_handler():
 
 
     # -----------------------------------------------------------------------------
+    # Get user exists
+    # -----------------------------------------------------------------------------
+    def get_user_exists(self, username):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
+        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+
+        self.parse_response(r)
+
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
+
+        j = r.json()
+
+        for element in j['data']:
+            if element['userid'] == username + '@' + self.account_realm:
+                return True
+        
+        return False
+    
+
+
+    # -----------------------------------------------------------------------------
     # Get permissions
     # -----------------------------------------------------------------------------
     def get_permissions(self):
@@ -138,40 +179,45 @@ class proxmox_session_handler():
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         
         j = r.json()
-
-        for element in j['data']: # iterate through all returned nodes
-
-            if element['node'] == self.node: # if our node is found
-
-                if element['status'] == 'online': # its our node AND its online
-                    return # we're good
-
-                else: # its out node but its not online
-                    print('Node ' + self.node + ' is offline! Exiting!')
-                    exit()
         
-        print('Node ' + self.node + ' not found! Exiting!')
-        exit()
+        for node in self.nodes_list: # iterate through all our nodes
+            found = False
+
+            for element in j['data']: # iterate through all returned nodes
+
+                if element['node'] == node: # if our node is found
+                    found = True
+
+                    if element['status'] == 'offline': # its our node AND its online
+                        print('Node ' + node + ' is offline! Exiting!')
+                        exit()                        
+        
+            if not found:
+                print('Node ' + node + ' not found! Exiting!')
+                exit()
+        
+        return
     
 
 
     # -----------------------------------------------------------------------------
     # Check that VMID is valid
     # -----------------------------------------------------------------------------
-    def check_vmid(self):
-        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + self.node + '/qemu'
+    def get_vmid(self, node, name):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
         self.parse_response(r)
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #exit()
 
         j = r.json()
 
         for element in j['data']: # iterate through all returned VMs
 
-            if element['vmid'] == self.vmid: # if our VM is found
-                return # we're good
+            if element['name'] == name: # if our VM is found
+                return element['vmid']
         
         print('VMID ' + self.vmid + ' not found! Exiting!')
         exit()
@@ -202,10 +248,10 @@ class proxmox_session_handler():
     
 
     # -----------------------------------------------------------------------------
-    # Get highest VMID
+    # Get new VMID to use when cloning a VM
     # -----------------------------------------------------------------------------
-    def get_starting_id(self):
-        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + self.node + '/qemu'
+    def get_newid(self, node):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
         self.parse_response(r)
@@ -224,27 +270,14 @@ class proxmox_session_handler():
 
 
     # -----------------------------------------------------------------------------
-    # Clone VMs
+    # Clone multiple VMs
     # -----------------------------------------------------------------------------
-    def clone_vms(self):
-        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
-                self.node + '/qemu/' + self.vmid + '/clone'
-        
-        self.check_nodes() # make sure node is online
-        self.check_vmid() # make sure VMID is valid
+    def clone_vms(self, name=""):
+        self.check_nodes() # make sure nodes are online
         self.check_pool() # make sure pool is valid
-
-        newid = self.get_starting_id() # get VMID for new VM
 
         headers = {
             'CSRFPreventionToken': self.token
-        }
-
-        payload = {
-            'newid': newid,
-            'target': self.node,
-            'pool': self.pool,
-            'name': self.name
         }
 
         # set the number of clones to create
@@ -252,24 +285,60 @@ class proxmox_session_handler():
 
         # start looping
         while number_to_clone > 0:
+            node = self.get_node() # get node to use
+            vmid = self.get_vmid(node, self.name) # make sure VMID is valid
+
             payload = {
-                'newid': newid,
-                'target': self.node,
-                'pool': self.pool,
-                'name': self.name
+                'newid': self.get_newid(node),
+                'target': self.get_node(),
+                'pool': self.pool
             }
+
+            url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
+                node + '/qemu/' + vmid + '/clone'
 
             r = self.session.post(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
             self.parse_response(r)
             
             number_to_clone -= 1 # decrement the number to clone by 1
-            newid += 1 # increment the next VMID by 1
+    
+
+
+    # -----------------------------------------------------------------------------
+    # Clone single VM
+    # -----------------------------------------------------------------------------
+    def clone_vm(self, name=""):
+        self.check_nodes() # make sure nodes are online
+        self.check_pool() # make sure pool is valid
+
+        headers = {
+            'CSRFPreventionToken': self.token
+        }
+
+        node = self.get_node() # get node to use
+        vmid = self.get_vmid(node, self.name) # make sure VMID is valid
+
+        if name != "":
+            name = self.prefix + name
+        
+        newid = self.get_newid(node)
+
+        payload = {
+            'newid': newid,
+            'target': self.get_node(),
+            'pool': self.pool,
+            'name': name
+        }
+
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
+            node + '/qemu/' + vmid + '/clone'
+
+        r = self.session.post(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+        self.parse_response(r)
+
+        return newid
 
         
-
-
-
-
 
     # -----------------------------------------------------------------------------
     # Get VM info
@@ -289,6 +358,30 @@ class proxmox_session_handler():
                 nodes.append(node['vmid'])
         
         return nodes
+    
+
+
+    # -----------------------------------------------------------------------------
+    # Grant user access to a VM
+    # -----------------------------------------------------------------------------
+    def grant_access(self, username, vmid):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/access/acl'
+
+        headers = {
+            'CSRFPreventionToken': self.token
+        }
+
+        payload = {
+            'users': username + '@' + self.account_realm,
+            'roles': self.role,
+            'path': '/vms/' + str(vmid),
+        }
+        
+        r = self.session.put(url, headers=headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
+
+        self.parse_response(r)
+
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
 
 
 
