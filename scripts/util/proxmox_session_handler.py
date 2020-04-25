@@ -80,7 +80,12 @@ class proxmox_session_handler():
 
         r = self.session.post(url, data=payload, verify=self.tls_verify)
         
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to authenticate.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
+            
 
         self.token = r.json()['data']['CSRFPreventionToken']
         self.ticket = r.json()['data']['ticket']
@@ -107,7 +112,11 @@ class proxmox_session_handler():
 
         r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to create account ' + str(username))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
 
@@ -120,7 +129,11 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get users.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         #exit()
@@ -138,17 +151,10 @@ class proxmox_session_handler():
     # Get user exists
     # -----------------------------------------------------------------------------
     def get_user_exists(self, username):
-        url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
-        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+        users = self.get_users()
 
-        self.parse_response(r)
-
-        #print(json.dumps(r.json(), indent=2, sort_keys=True))
-
-        j = r.json()
-
-        for element in j['data']:
-            if element['userid'] == username + '@' + self.account_realm:
+        for element in users:
+            if element == username + '@' + self.account_realm:
                 return True
         
         return False
@@ -167,7 +173,11 @@ class proxmox_session_handler():
 
         r = self.session.get(url, params=payload, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get permissions.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         print(json.dumps(r.json(), indent=2, sort_keys=True))
 
@@ -180,7 +190,11 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to check nodes.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         
@@ -213,23 +227,60 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get nodes.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
         
         j = r.json()
 
         nodes = []
         for element in j['data']: # iterate through all returned nodes
-
-            if element['status'] == 'online': # its our node AND its online
+            if element['status'] == 'online': # if its online
                 nodes.append(element['node'])
         
-            
         return nodes
+
     
+
+    # -----------------------------------------------------------------------------
+    # get all VMIDs
+    # -----------------------------------------------------------------------------
+    def get_vmids(self):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/cluster/resources'
+        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+        
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get vms2.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
+        
+
+        j = r.json()
+
+        vms = {}
+        for element in j['data']: # iterate through all resources
+            if element['type'] == 'qemu': # if its a VM
+                vmid = str(element['vmid'])
+                node = element['node']
+                
+                
+
+                if not node in vms:
+                    vms[node] = [vmid]
+
+                else:
+                    vms[node].append(vmid)
+        
+        return vms
+
+
 
 
     # -----------------------------------------------------------------------------
-    # get all VMs
+    # get all VMs from online nodes
     # -----------------------------------------------------------------------------
     def get_vms(self):
         nodes = self.get_nodes()
@@ -240,7 +291,13 @@ class proxmox_session_handler():
             url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
             r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-            self.parse_response(r)
+            if not str(r.status_code).startswith('2'):
+                print('Error! Failed to get vms.')
+                print('Status code: ' + str(r.status_code))
+                #print(json.dumps(r.json(), indent=2, sort_keys=True))
+                print(r.text)
+                print(vms)
+                exit()
 
             #print(json.dumps(r.json(), indent=2, sort_keys=True))
             #exit()
@@ -265,7 +322,11 @@ class proxmox_session_handler():
         
         r = self.session.delete(url, headers=self.headers, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to delete VMID: ' + str(vmid) + ' on node: ' + str(node))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         #exit()
@@ -279,7 +340,11 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get vmid on node ' + str(node))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         #exit()
@@ -303,7 +368,11 @@ class proxmox_session_handler():
         url = 'https://' + self.server + ':' + self.port + '/api2/json/cluster/resources'
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to check pool.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         #exit()
@@ -322,21 +391,16 @@ class proxmox_session_handler():
     # -----------------------------------------------------------------------------
     # Get new VMID to use when cloning a VM
     # -----------------------------------------------------------------------------
-    def get_newid(self, node):
-        url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu'
-        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+    def get_newid(self):
+        vms = self.get_vmids()
 
-        self.parse_response(r)
+        highest_id = 100
 
-        #print(json.dumps(r.json(), indent=2, sort_keys=True))
-
-        j = r.json()
-        highest_id = 0
-
-        for element in j['data']: # iterate through all returned VMs
-
-            if int(element['vmid']) > highest_id: # check if this node has a higher VMID than we've sen before
-                highest_id = int(element['vmid'])
+        for host in vms:
+            for vmid in vms[host]:
+                if int(vmid) > highest_id:
+                    highest_id = int(vmid)
+                
         
         return highest_id + 1 # return 1 higher than the highest VMID
 
@@ -356,17 +420,7 @@ class proxmox_session_handler():
             node = self.get_node() # get node to use
             vmid = self.get_vmid(node, self.name) # make sure VMID is valid
 
-            payload = {
-                'newid': self.get_newid(node),
-                'target': self.get_node(),
-                'pool': self.pool
-            }
-
-            url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
-                node + '/qemu/' + vmid + '/clone'
-
-            r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
-            self.parse_response(r)
+            self.clone_vm(name)
             
             number_to_clone -= 1 # decrement the number to clone by 1
     
@@ -385,20 +439,30 @@ class proxmox_session_handler():
         if name != "":
             name = self.prefix + name
         
-        newid = self.get_newid(node)
+        newid = self.get_newid()
 
         payload = {
             'newid': newid,
-            'target': self.get_node(),
+            'target': node,
             'pool': self.pool,
             'name': name
         }
 
+        print(self.headers)
+
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
             node + '/qemu/' + vmid + '/clone'
 
+        print(url)
+        print(payload)
+
         r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
-        self.parse_response(r)
+        
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to clone vm on node ' + str(node))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         return newid
 
@@ -407,11 +471,15 @@ class proxmox_session_handler():
     # -----------------------------------------------------------------------------
     # Get VM info
     # -----------------------------------------------------------------------------
-    def get_node_qemu_vm(self, node, vmid):
+    def get_vm(self, node, vmid):
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + node + '/qemu/' + vmid
         r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get VMID ' + str(vmid) + ' on node ' + str(node))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
 
@@ -431,15 +499,21 @@ class proxmox_session_handler():
     def grant_access(self, username, vmid):
         url = 'https://' + self.server + ':' + self.port + '/api2/json/access/acl'
 
+        userid = username + '@' + self.account_realm
+
         payload = {
-            'users': username + '@' + self.account_realm,
+            'users': userid,
             'roles': self.role,
             'path': '/vms/' + str(vmid),
         }
         
         r = self.session.put(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to grant access to user ' + str(userid) + ' on vmid ' + str(vmid))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
     
@@ -453,46 +527,11 @@ class proxmox_session_handler():
     
         r = self.session.delete(url, headers=self.headers, cookies=self.cookies, verify=self.tls_verify)
 
-        self.parse_response(r)
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to delete user ' + str(userid))
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
 
         #print(json.dumps(r.json(), indent=2, sort_keys=True))
         #exit()
-
-
-
-    # -----------------------------------------------------------------------------
-    # Parse response
-    # -----------------------------------------------------------------------------
-    def parse_response(self, response):
-        if str(response.status_code).startswith('3'):
-            print('Response code: ' + str(response.status_code))
-            print('Verify server address: ' + response.url)
-            exit()
-        
-        elif response.status_code == 401:
-            print('Response code: ' + str(response.status_code))
-            print('Verify account credentials')
-            print(response.text)
-            exit()
-        
-        elif str(response.status_code).startswith('4'):
-            print('Response code: ' + str(response.status_code))
-            print('Verify server address: ' + response.url)
-            print(response.text)
-            exit()
-        
-        elif str(response.status_code).startswith('5'):
-            print('Response code: ' + str(response.status_code))
-            print('Server error')
-            print(response.text)
-            exit()
-        
-        elif str(response.status_code).startswith('2'):
-            #print(response.status_code)
-            #print(json.dumps(response.json(), indent=2, sort_keys=True))
-            return
-        
-        else:
-            print('Response code: ' + str(response.status_code))
-            print('Unknown error')
-            exit()
