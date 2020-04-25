@@ -448,13 +448,9 @@ class proxmox_session_handler():
             'name': name
         }
 
-        print(self.headers)
-
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
             node + '/qemu/' + vmid + '/clone'
 
-        print(url)
-        print(payload)
 
         r = self.session.post(url, headers=self.headers, data=payload, cookies=self.cookies, verify=self.tls_verify)
         
