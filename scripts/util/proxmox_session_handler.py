@@ -144,6 +144,28 @@ class proxmox_session_handler():
             users.append(user['userid'])
         
         return users
+
+    
+
+    # -----------------------------------------------------------------------------
+    # Get users with details
+    # -----------------------------------------------------------------------------
+    def get_users_details(self):
+        url = 'https://' + self.server + ':' + self.port + '/api2/json/access/users'
+        r = self.session.get(url, cookies=self.cookies, verify=self.tls_verify)
+
+        if not str(r.status_code).startswith('2'):
+            print('Error! Failed to get users.')
+            print('Status code: ' + str(r.status_code))
+            print(json.dumps(r.json(), indent=2, sort_keys=True))
+            exit()
+
+        #print(json.dumps(r.json(), indent=2, sort_keys=True))
+        #exit()
+
+        j = r.json()
+        
+        return j
     
 
 
@@ -445,7 +467,7 @@ class proxmox_session_handler():
             'newid': newid,
             'target': node,
             'pool': self.pool,
-            'name': name
+            'name': name.strip()
         }
 
         url = 'https://' + self.server + ':' + self.port + '/api2/json/nodes/' + \
